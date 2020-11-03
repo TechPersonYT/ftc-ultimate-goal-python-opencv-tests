@@ -137,7 +137,7 @@ def get_orientation_from_wall_photo(image, image_name):
 
     segments = [tuple(sorted((tuple(point_1.tolist()), tuple(point_2.tolist())))) for point_1 in unnested_contour \
                 for point_2 in unnested_contour if point_1.tolist() != point_2.tolist()]  # Collect groupings of points from the contour as segments
-    segments = list(set(segments))
+    segments = list(set(segments))  # Remove duplicates
     
     segments_slopes_lengths = [(tuple(sorted(((x1, y1), (x2, y2)))), (y2-y1)/(x2-x1), math.sqrt((x2-x1)**2 + (y2-y1)**2)) \
                                if x2-x1 != 0 else (tuple(sorted(((x1, y1), (x2, y2)))), float("inf"), math.sqrt((x2-x1)**2 + (y2-y1)**2)) \
@@ -148,11 +148,14 @@ def get_orientation_from_wall_photo(image, image_name):
 
     segments_slopes_lengths.pop(); segments_slopes_lengths.pop()  # Remove the longest 2 segments, which are likely the diagonals
 
-    print(len(segments), len(segments_slopes_lengths))
+    #print(len(segments), len(segments_slopes_lengths))
+    print(len(segments_slopes_lengths))
     
-    sides = [((segment_1, slope_1, length_1), (segment_2, slope_2, length_2)) for (segment_1, slope_1, length_1) in segments_slopes_lengths \
+    sides = [(tuple(sorted(((segment_1, slope_1, length_1), (segment_2, slope_2, length_2))))) for (segment_1, slope_1, length_1) in segments_slopes_lengths \
              for (segment_2, slope_2, length_2) in segments_slopes_lengths if abs(slope_1-slope_2) < OPPOSITE_RECTANGLE_SIDE_DIFFERENCE_THRESHOLD \
              and segment_1 != segment_2]  # Group segments by opposite side. Segments opposite each other will likely appear (at least) almost parallel
+
+    sides = list(set(sides))  # Remove duplicates
     
 ##    slopes_and_lengths = [((y2-y1)/(x2-x1), math.sqrt((x2-x1)**2 + (y2-y1)**2)) if (x2-x1) != 0 else (float("inf"), math.sqrt((x2-x1)**2 + (y2-y1)**2)) for (x2, y2) in unnested_contour for (x1, y1) in unnested_contour]  # Extract the lengths of the segments, grouped with their slopes. This should generate 6 lines (including 2 diagonals of the rectangle) after duplicates are removed
 ##    slopes_and_lengths = list(set(slopes_and_lengths))  # Remove duplicates
