@@ -21,7 +21,7 @@ AREA_TIE_BREAK = 1  # The ID for the tie break which considers which rectangle c
 tie_break_priority = [RECTANGLEISH_TIE_BREAK,  # In what order ties should be broken, sorted by pritority (if all ties are broken by the first criteria, the second is ignored)
                       AREA_TIE_BREAK]
 
-OPPOSITE_RECTANGLE_SIDE_DIFFERENCE_THRESHOLD = float("inf")  # The maximum amount (supposedly in pixels) two slopes can be different from each other while still being considered parallel (and thus opposite sides of the rectangle)
+OPPOSITE_RECTANGLE_SIDE_DIFFERENCE_THRESHOLD = 15  # The maximum amount (supposedly in pixels) two slopes can be different from each other while still being considered parallel (and thus opposite sides of the rectangle)
 
 
 import cv2
@@ -30,30 +30,8 @@ import imutils
 import math
 import numpy as np
 
-def grab_rectangle(rotated_rectangle):
-    """Convenience function to return the points of a rotated rectangle outputted by cv2.minAreaRect"""
-
-    (x, y), (width, height), angle = rotated_rectangle  # Extract all the information from the tuple
-    angle = math.radians(angle)  # Convert the generated angle to radians for the calculations
-
-    raw_points = [(x, y), (x+width, y),  # Generate the unrotated, untranslated points given the position, width, and height
-                  (x+width, y+height), (x, y+height)]
-
-    pivot = (x+(width/2), y+(height/2))  # The pivot point should be the center of the rectangle
-
-    raw_points = [(point[0]-pivot[0], point[1]-pivot[1]) for point in raw_points]  # Transform by the pivot point
-
-    rotated_points = [(x*math.cos(angle) - y*math.sin(angle),  # Rotate the points
-                       x*math.sin(angle) + y*math.cos(angle)) for (x, y) in raw_points]
-
-    rotated_points = [(point[0]+pivot[0], point[1]+pivot[1]) for point in rotated_points]  # Undo the pivot point transformation
-
-    #print(rotated_points)
-
-    return rotated_points  # Return the final rotated points
-
 def renest_points(points):
-    """Convenience funtion to nest all points within the given array in arrays only containing that point. OpenCV needs this for a UMat argument when a rectangle returned from grab_rectangle is used as a contour"""
+    """Convenience funtion to nest all points within the given array in arrays only containing that point. OpenCV needs this for a UMat argument when a rectangle returned from boxPoints is used as a contour"""
 
     return np.array([[point] for point in points]).astype(np.float32)
 
@@ -89,6 +67,7 @@ def get_orientation_from_wall_photo(image, image_name):
     contours = imutils.grab_contours(cv2.findContours(edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE))
 
     contours = sorted(contours, key=cv2.contourArea, reverse=True)[:10]  # FIXME: This value too
+    contours = [cv2.convexHull(contour) for contour in contours]
 
     candidates = []
 
@@ -99,8 +78,7 @@ def get_orientation_from_wall_photo(image, image_name):
         if len(approximation) == 4:  # Our wall photo will have 4 points, as it is a rectangle
             candidates.append(approximation)  # Add it to the list of contours which might be our wall image
 
-    cv2.drawContours(image, contours, -1, (0, 255, 0), 3)
-    cv2.imwrite("Output/Contours ({})".format(image_name), image)
+    cv2.drawContours(image, contours, -1, (0, 0, 0), 3)
 
     prewarning = False
 
@@ -125,13 +103,22 @@ def get_orientation_from_wall_photo(image, image_name):
     # FIXME: The tie break priority represents more of the singular method used to determine which contour is chosen rather than a priority since there's currently no way to tell whether the tie remained after the new sorting method was applied
     if tie_break_priority[0] == RECTANGLEISH_TIE_BREAK:  # Break ties based on parallel sides
         #candidates_2.sort(key=lambda x: abs(cv2.contourArea(x[0])-cv2.contourArea(cv2.minAreaRect(x[0]).points())))  # If a contour is more similar to a rectangle than another, the rotated rectangle with the minimum area which encloses it will have an less of a difference in area from the original contour than the other contour does
-        candidates_2.sort(key=lambda x: abs(cv2.contourArea(x[0])-cv2.contourArea(renest_points(grab_rectangle(cv2.minAreaRect(x[0]))))))
+        candidates_2.sort(key=lambda x: abs(cv2.contourArea(x[0]) / cv2.contourArea(renest_points(cv2.boxPoints(cv2.minAreaRect(x[0]))))), reverse=True)
+
+        for x in candidates_2:
+            points = cv2.boxPoints(cv2.minAreaRect(x[0])).astype(np.int0)
+            cv2.rectangle(image, tuple(points[0]), tuple(points[2]), (0, 255, 0))  # Debug
         contour = candidates_2[0]  # Choose the more rectangle-ey contour
     elif tie_break_priority[0] == AREA_TIE_BREAK:  # Break ties based on the previously calculated area difference
         candidates_2.sort(key=lambda x: x[1], reverse=True)
         contour = candidates_2[0]  # Choose the contour most conforming to the expected area
     else:
         raise NotImplementedError("Unknown tie breaking method: {}".format(tie_break_priority[0]))
+
+    cv2.drawContours(image, np.array(candidates)[:, 0], -1, (255, 0, 0), 3)
+    cv2.drawContours(image, np.array(candidates_2)[:, 0], -1, (0, 0, 255), 3)
+    cv2.drawContours(image, [contour[0]], -1, (0, 255, 0), 3)
+    cv2.imwrite("Output/Contours ({})".format(image_name), image)
 
     unnested_contour = unnest_points(contour[0])
 
@@ -145,7 +132,7 @@ def get_orientation_from_wall_photo(image, image_name):
                                if x2-x1 != 0 else (tuple(sorted(((x1, y1), (x2, y2)))), float("inf"), math.sqrt((x2-x1)**2 + (y2-y1)**2)) \
                                for ((x1, y1), (x2, y2)) in segments if (x1, y1) != (x2, y2)]  # Group each segment with its corresponding slope and length
     
-    segments_slopes_lengths = list(set(segments_slopes_lengths))
+    segments_slopes_lengths = list(set(segments_slopes_lengths))  # Remove duplicates
     
     segments_slopes_lengths.sort(key=lambda s: s[2])  # Sort by largest length
 
@@ -156,7 +143,7 @@ def get_orientation_from_wall_photo(image, image_name):
     
     sides = [tuple(sorted(((segment_1, slope_1, length_1), (segment_2, slope_2, length_2)))) for (segment_1, slope_1, length_1) in segments_slopes_lengths \
              for (segment_2, slope_2, length_2) in segments_slopes_lengths if abs(slope_1-slope_2) < OPPOSITE_RECTANGLE_SIDE_DIFFERENCE_THRESHOLD \
-             and segment_1 != segment_2]  # Group segments by opposite side. Segments opposite each other will likely appear (at least) almost parallel
+             and segment_1 != segment_2]  # Group segments by opposite side. Segments opposite each other will likely appear almost or exactly parallel
 
     sides = list(set(sides))  # Remove duplicates
     print(sides)
