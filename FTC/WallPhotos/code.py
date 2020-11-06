@@ -21,7 +21,7 @@ AREA_TIE_BREAK = 1  # The ID for the tie break which considers which rectangle c
 tie_break_priority = [RECTANGLEISH_TIE_BREAK,  # In what order ties should be broken, sorted by pritority (if all ties are broken by the first criteria, the second is ignored)
                       AREA_TIE_BREAK]
 
-OPPOSITE_RECTANGLE_SIDE_DIFFERENCE_THRESHOLD = 15  # The maximum amount (supposedly in pixels) two slopes can be different from each other while still being considered parallel (and thus opposite sides of the rectangle)
+OPPOSITE_RECTANGLE_SIDE_DIFFERENCE_THRESHOLD = 5  # The maximum amount (supposedly in pixels) two slopes can be different from each other while still being considered parallel (and thus opposite sides of the rectangle)
 
 
 import cv2
@@ -29,6 +29,14 @@ import warnings
 import imutils
 import math
 import numpy as np
+
+def segment_distance(segment_1, segment_2):
+    """Convenience function to measure the distance between the medians of two segments_slopes_lengths triplets"""
+
+    medians = ((segment_1[0][0][0]+segment_1[0][1][0])/2, (segment_1[0][0][1]+segment_1[0][1][1])/2,  # The median is the average of the values of each axis
+                (segment_2[0][0][0]+segment_1[0][1][0])/2, (segment_1[0][0][1]+segment_1[0][1][1])/2)
+
+    return math.sqrt((medians[0][0]-medians[0][1])**2+(medians[1][0]-medians[1][1])**2)
 
 def renest_points(points):
     """Convenience funtion to nest all points within the given array in arrays only containing that point. OpenCV needs this for a UMat argument when a rectangle returned from boxPoints is used as a contour"""
@@ -141,12 +149,42 @@ def get_orientation_from_wall_photo(image, image_name):
     #print(len(segments), len(segments_slopes_lengths))
     #print(len(segments_slopes_lengths))
     
-    sides = [tuple(sorted(((segment_1, slope_1, length_1), (segment_2, slope_2, length_2)))) for (segment_1, slope_1, length_1) in segments_slopes_lengths \
-             for (segment_2, slope_2, length_2) in segments_slopes_lengths if abs(slope_1-slope_2) < OPPOSITE_RECTANGLE_SIDE_DIFFERENCE_THRESHOLD \
-             and segment_1 != segment_2]  # Group segments by opposite side. Segments opposite each other will likely appear almost or exactly parallel
+    #sides = [tuple(sorted([(segment_1, slope_1, length_1), (segment_2, slope_2, length_2)])) for (segment_1, slope_1, length_1) in segments_slopes_lengths \
+    #         for (segment_2, slope_2, length_2) in segments_slopes_lengths if abs(slope_1-slope_2) < OPPOSITE_RECTANGLE_SIDE_DIFFERENCE_THRESHOLD \
+    #         and segment_1 != segment_2]  # Group segments by opposite side. Segments opposite each other will likely appear almost or exactly parallel
 
-    sides = list(set(sides))  # Remove duplicates
-    print(sides)
+##    for (segment_1, slope_1, length_1) in segments_slopes_lengths:  # TODO: Redo this by a tie-breaking method so that more parallel lines are grouped and no doubles are accidnetally formed
+##        for (segment_2, slope_2, length_2) in segments_slopes_lengths:
+##            if segment_1 == segment_2 or segment_1[0] == segment_2[0] or segment_1[1] == segment_2[1]:  # Ensure points are unique within a pairing
+##                continue
+##
+##            continuing = False
+##            
+##            for pair in sides: # Ensure segments are unique within the resulting list
+##                if segment_1 in pair or segment_2 in pair:
+##                    continuing = True
+##
+##            if continuing:
+##                continue
+##
+##            s = set([(segment_1, slope_1, length_1), (segment_2, slope_2, length_2)])
+##            
+##            if s not in sides:
+##                sides.append(s)
+
+    # Side groupings should be formed from the furthest segments; sides will be arbitrarily grouped, then resorted if necessary
+
+    assert len(segments_slopes_lengths) == 4  # Requried criteria
+
+    sides = [(segments_slopes_lengths[0], segments_slopes_lengths[1]),  # One of the two possible combinations of segment groupings
+             (segments_slopes_lengths[2], segments_slopes_lengths[3])]
+
+    #  Ensure that grouped sides are those furthest from each other
+    if segment_distance(sides[0][0], sides[0][1]) < segment_distance(sides[1][0], sides[1][1]):
+        sides = [(segments_slopes_lengths[0], segments_slopes_lengths[2]),  # Use the other possible gruoping
+                 (segments_slopes_lengths[1], segments_slopes_lengths[3])]
+
+    print(sides, len(sides))
     
 ##    slopes_and_lengths = [((y2-y1)/(x2-x1), math.sqrt((x2-x1)**2 + (y2-y1)**2)) if (x2-x1) != 0 else (float("inf"), math.sqrt((x2-x1)**2 + (y2-y1)**2)) for (x2, y2) in unnested_contour for (x1, y1) in unnested_contour]  # Extract the lengths of the segments, grouped with their slopes. This should generate 6 lines (including 2 diagonals of the rectangle) after duplicates are removed
 ##    slopes_and_lengths = list(set(slopes_and_lengths))  # Remove duplicates
