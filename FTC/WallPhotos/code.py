@@ -33,10 +33,21 @@ import numpy as np
 def segment_distance(segment_1, segment_2):
     """Convenience function to measure the distance between the medians of two segments_slopes_lengths triplets"""
 
-    medians = ((segment_1[0][0][0]+segment_1[0][1][0])/2, (segment_1[0][0][1]+segment_1[0][1][1])/2,  # The median is the average of the values of each axis
-                (segment_2[0][0][0]+segment_1[0][1][0])/2, (segment_1[0][0][1]+segment_1[0][1][1])/2)
+    #medians = (((segment_1[0][0][0]+segment_1[0][1][0])/2, (segment_1[0][0][1]+segment_1[0][1][1])/2),  # The median is the average of the values of each axis
+    #            ((segment_2[0][0][0]+segment_1[0][1][0])/2, (segment_1[0][0][1]+segment_1[0][1][1])/2))
 
-    return math.sqrt((medians[0][0]-medians[0][1])**2+(medians[1][0]-medians[1][1])**2)
+    #return math.sqrt((medians[0][0]-medians[0][1])**2+(medians[1][0]-medians[1][1])**2)
+
+    lines = [segment_1[0], segment_2[0]]
+
+    #distances = [math.sqrt((point_1[0]-point_2[0])**2, (point_1[1]-point_2[1])**2) for point_1, point_2 in line for line in lines]
+    distances = []
+
+    for line in lines:
+        point_1, point_2 = line
+        distances.append(math.sqrt((point_1[0]-point_2[0])**2 + (point_1[1]-point_2[1])**2))
+
+    return max(distances)  # Return the greatest distance between the segments
 
 def renest_points(points):
     """Convenience funtion to nest all points within the given array in arrays only containing that point. OpenCV needs this for a UMat argument when a rectangle returned from boxPoints is used as a contour"""
@@ -126,7 +137,7 @@ def get_orientation_from_wall_photo(image, image_name):
     cv2.drawContours(image, np.array(candidates)[:, 0], -1, (255, 0, 0), 3)
     cv2.drawContours(image, np.array(candidates_2)[:, 0], -1, (0, 0, 255), 3)
     cv2.drawContours(image, [contour[0]], -1, (0, 255, 0), 3)
-    cv2.imwrite("Output/Contours ({})".format(image_name), image)
+    #cv2.imwrite("Output/Contours ({})".format(image_name), image)  # This line moved to later for debugging
 
     unnested_contour = unnest_points(contour[0])
 
@@ -184,7 +195,15 @@ def get_orientation_from_wall_photo(image, image_name):
         sides = [(segments_slopes_lengths[0], segments_slopes_lengths[2]),  # Use the other possible gruoping
                  (segments_slopes_lengths[1], segments_slopes_lengths[3])]
 
-    print(sides, len(sides))
+    for segment_1, segment_2 in sides:
+        line_1, line_2 = segment_1[0], segment_2[0]
+
+        cv2.line(image, line_1[0], line_1[1], (0, 0, 255), 5)
+        cv2.line(image, line_2[0], line_2[1], (255, 0, 0), 5)
+
+    cv2.imwrite("Output/Contours ({})".format(image_name), image)
+
+    print(len(sides))
     
 ##    slopes_and_lengths = [((y2-y1)/(x2-x1), math.sqrt((x2-x1)**2 + (y2-y1)**2)) if (x2-x1) != 0 else (float("inf"), math.sqrt((x2-x1)**2 + (y2-y1)**2)) for (x2, y2) in unnested_contour for (x1, y1) in unnested_contour]  # Extract the lengths of the segments, grouped with their slopes. This should generate 6 lines (including 2 diagonals of the rectangle) after duplicates are removed
 ##    slopes_and_lengths = list(set(slopes_and_lengths))  # Remove duplicates
