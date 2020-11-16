@@ -80,10 +80,11 @@ def get_orientation_from_wall_photo(image, image_name):
     thresholded = cv2.dilate(thresholded, None, iterations=1)
 
     #edges = cv2.Canny(cv2.bilateralFilter(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY), 11, 17, 17), 30, 200)  # FIXME: Maybe add all these integer values as arguments?
+    edges = cv2.Canny(cv2.bilateralFilter(thresholded, 11, 17, 17), 30, 200)  # FIXME: Maybe add all these integer values as arguments?
 
     #edges = cv2.cvtColor(thresholded, cv2.COLOR_BGR2GRAY)
 
-    edges = thresholded
+    #edges = thresholded
     
     cv2.imwrite("Output/Edges ({})".format(image_name), edges)
     
