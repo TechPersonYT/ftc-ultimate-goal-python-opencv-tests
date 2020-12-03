@@ -2,6 +2,9 @@
 
 import pathlib
 import os
+import sys
+
+sys.setrecursionlimit(100000000)
 
 images_root = pathlib.Path("Images")
 
@@ -20,6 +23,10 @@ AREA_TIE_BREAK = 1  # The ID for the tie break which considers which rectangle c
 
 tie_break_priority = [RECTANGLEISH_TIE_BREAK,  # In what order ties should be broken, sorted by pritority (if all ties are broken by the first criteria, the second is ignored)
                       AREA_TIE_BREAK]
+
+DEFAULT_EPSILON_FACTOR = 0.015  # The default value for the factor multiplied by the perimeter of a rectangle candidate contour to find a good epsilon value
+NO_CANDIDATES_EPSILON_FACTOR_INCREMENT = 0.01  # The value added repeatedly to the default epsilon factor until at least one candidate is found with the correct number of approximated points
+NO_CANDIDATES_EPSILON_FACTOR_MAXIMUM = 0.025  # The maximum epsilon factor tested in an attempt to detect the correct number of points before giving up (should be 1, is 0 for debug)
 
 OPPOSITE_RECTANGLE_SIDE_DIFFERENCE_THRESHOLD = 5  # The maximum amount (supposedly in pixels) two slopes can be different from each other while still being considered parallel (and thus opposite sides of the rectangle)
 
@@ -68,10 +75,10 @@ def threshold_wall_photo_colors(image):
     hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)  # We probably want the HSV colorspace for color thresholding for reasons described here: https://en.wikipedia.org/wiki/HSL_and_HSV
     return cv2.inRange(hsv_image, HSV_WALL_PHOTO_COLOR_BOUND_LOW, HSV_WALL_PHOTO_COLOR_BOUND_HIGH)  # Threshold the image for the constant HSV colors representing the approximate color range of the WALL_PHOTOs
 
-def get_orientation_from_wall_photo(image, image_name):
+def get_orientation_from_wall_photo(image, image_name, epsilon_factor=DEFAULT_EPSILON_FACTOR):
     """Takes an image of a wall photo from the robot camera and returns either the estimated orientation of the robot given the difference in slopes between the sides of the contour enclosing the wall photo, or None if no such positive match was made"""
 
-    image = imutils.resize(image, height=300)
+    #image = imutils.resize(image, height=50)  # Rescale to help accuracy when dealing with round-looking corners
     blurred = cv2.GaussianBlur(image, (15, 15), 0)
 
     hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
@@ -86,7 +93,7 @@ def get_orientation_from_wall_photo(image, image_name):
 
     #edges = thresholded
     
-    cv2.imwrite("Output/Edges ({})".format(image_name), edges)
+    cv2.imwrite("Output/Edges ({}).jpg".format(image_name), edges)
     
     contours = imutils.grab_contours(cv2.findContours(edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE))
 
@@ -98,7 +105,7 @@ def get_orientation_from_wall_photo(image, image_name):
 
     for contour in contours:
         perimeter = cv2.arcLength(contour, True)
-        approximation = cv2.approxPolyDP(contour, perimeter*0.015, True)  # FIXME: Also this 0.015
+        approximation = cv2.approxPolyDP(contour, perimeter*epsilon_factor, True)  # FIXME: Also this 0.015
 
         if len(approximation) == 4:  # Our wall photo will have 4 points, as it is a rectangle
             candidates.append(approximation)  # Add it to the list of contours which might be our wall image
@@ -110,8 +117,14 @@ def get_orientation_from_wall_photo(image, image_name):
     if len(candidates) == 1:
         prewarning = True
     elif len(candidates) == 0:
-        warnings.warn("No 4-point contours were detected. Returning None")
-        return
+        if epsilon_factor + NO_CANDIDATES_EPSILON_FACTOR_INCREMENT > NO_CANDIDATES_EPSILON_FACTOR_MAXIMUM:  # This epsilon exceeds our maximum; give up
+            warnings.warn("No 4-point contours were detected after retrying with at least one higher epsilon value, exceeding the maximum; giving up and returning None")
+            return None
+        
+        epsilon_factor += NO_CANDIDATES_EPSILON_FACTOR_INCREMENT
+        
+        warnings.warn("No 4-point contours were detected. Retrying with a higher epsilon factor: {}".format(epsilon_factor))
+        return get_orientation_from_wall_photo(image, image_name, epsilon_factor=epsilon_factor)
 
     candidates_2 = []
 
@@ -212,7 +225,7 @@ def get_orientation_from_wall_photo(image, image_name):
         cv2.line(image, line_1[0], line_1[1], (0, 0, 255), 5)
         cv2.line(image, line_2[0], line_2[1], (255, 0, 0), 5)
 
-    cv2.imwrite("Output/Contours ({})".format(image_name), image)
+    cv2.imwrite("Output/Contours ({}).jpg".format(image_name), image)
 
     print(len(sides))
     
